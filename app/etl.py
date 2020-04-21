@@ -17,13 +17,11 @@ logic
 2.4 get campaign abuse reports
 3. evaluate the data format of the reports
 4. transform data into a campaign, activity, email structure
-5. create marketing dataset in gbq
-6. upload data to gbq into a table
+5. upload data to google bigquery into a table of an existing dataset
 '''
 
 from multiprocess import Pool
 from copy import deepcopy
-from sys import path
 import pandas as pd
 
 import determine_running_folder_path as drfp
@@ -32,31 +30,22 @@ from transform import write_data_frame_to_json as wdftj
 
 from load import load_from_local_to_gbq as load
 
+from connect import Connector
+
 pathFiles=drfp.main()
-path.append(str(pathFiles/'mailchimp_data_transfer'))
-baseUrl='https://us1.api.mailchimp.com/3.0/'
 
 import extract_mailchimp as emi
 import transform_mailchimp as tmi
 
-#batching
-#create the operations array
-#if total_items >1000
-#use the logic from get_all_data
-#to add the operation to the batch
-#post at /batches
-#every 2 min check the response at /batches/{batch_id} -> total_operations vs finished operations
-#A GET call to the URL returned in the batch resources response_body_url 
-#returns a gzipped tar archive of JSON files that contain the results 
-#of operations in the following format:
-#read the results of the batch operation
-#this should be the transform batches to total items
-
 def set_mappers():
-
+    
+    #since_send_time is used to filter the email marketing campaigns you want to retrieve
+    #each campaign has multiple data components
+    #for each of the data components there is a specific api url
+    #and a transform function specified in the transform_mailchimp file
     mappers={'campaigns':{'params':
                                 {'status':'sent'
-                                ,'since_send_time':'2019-01-01T00:00:00+02:00'
+                                ,'since_send_time':'2019-10-18T00:00:00+02:00'
                                 ,'fields':['campaigns']
                                 }
                             ,'request_suffix':'campaigns'
@@ -122,8 +111,8 @@ def consolidate_campaign_activity_data(campaign,auth,mappers):
     campaignEmailActivity['ToListId']=campaign.get('ToListId')
     campaignEmailActivity['EmailActivity']=campaignData['campaignActivity']
         
-    output={'filePath':pathFiles/'mailchimp_data_transfer'/'campaigns_activities'/(campaign.get('Id')+'_activity.json')
-    ,'data':campaignEmailActivity}
+    output={'filePath':pathFiles/'campaigns_activities'/(campaign.get('Id')+'_activity.json')
+    ,'data':pd.DataFrame(campaignEmailActivity)}
     
     return output
 
@@ -145,9 +134,8 @@ def consolidate_campaign_data(campaign,auth,mappers):
     return campaignOut
 
 
-def get_relevant_campaigns(mappers):
-    
-    auth=emi.set_auth()
+def get_relevant_campaigns(auth,mappers):
+        
     campaignsRaw=emi.get_all_data(mappers['campaigns'],auth)
     campaigns=list(map(mappers['campaigns'].get('transformer'),campaignsRaw))
     
@@ -159,31 +147,57 @@ def get_relevant_campaigns(mappers):
     return campaignsToWrite
     
     
-def write_load_to_gbq(data,gcs_bucket_name,bq_dataset_id,bq_table_id,localFilePath):
-    wdftj.main(data,localFilePath,inputType='list')
+def write_locally_load_to_gbq(data,gcs_bucket_name,bq_dataset_id,bq_table_id,localFilePath,autodetectSchema):
+    
+    wdftj.main(data,localFilePath,require_string_transformation=True)
    
-    load.main(file_path=localFilePath
+    load.main(serviceAccountFileName='''[insert the name of the file with the 
+                                         google cloud platform service key account here]'''
+            ,file_path=localFilePath
           ,bucket_name=gcs_bucket_name
           ,dataset_id=bq_dataset_id
           ,table_id=bq_table_id
+          ,autodetect=autodetectSchema
           )
 
 def main():
-    auth=emi.set_auth()
+    auth=Connector.connect_to_mailchimp('''[insert the name of the file with the 
+                                         mailchimp api key here]''')
+    
     mappers=set_mappers()
-     
-    campaigns=pd.read_csv(pathFiles/'mailchimp_data_transfer'/'campaignsProcessed.csv')
-    campaigns=campaigns[['Id','ToListId','NoEmailsSent']]
-    campaignsList=campaigns.to_dict(orient='records')
-        
+    
+    campaignsToWrite=get_relevant_campaigns(auth,mappers)
+    
+    campaignsFilePath=pathFiles/'email_campaigns.json'
+    
+    write_locally_load_to_gbq(campaignsToWrite
+                          ,'[insert google cloud storage bucket name here]'
+                            ,'[insert google bigquery dataset_id here]'
+                            ,'email_campaigns'
+                            ,campaignsFilePath
+                            ,True
+                            )
+    
+    campaignsList=(campaignsToWrite[['Id','ToListId','NoEmailsSent']]
+                    .to_dict(orient='records'))
+    
+
+    firstCampaignData=True
+    
     for campaign in campaignsList:
         campaign_activity=consolidate_campaign_activity_data(campaign,auth,mappers)
         
-        write_load_to_gbq(campaign_activity['data']
-                        ,'marketing2prf'
-                        ,'marketing'
-                        ,'email_campaigns_activity'
-                        ,campaign_activity['filePath'])
+        if firstCampaignData:
+            autodetectSchema=True
+        else:
+            autodetectSchema=False
+        
+        write_locally_load_to_gbq(campaign_activity['data']
+                            ,'[insert google cloud storage bucket name here]'
+                            ,'[insert google bigquery dataset_id here]'
+                            ,'email_campaigns_activity'
+                            ,campaign_activity['filePath']
+                            ,autodetectSchema)
         
             
 if __name__=="__main__":

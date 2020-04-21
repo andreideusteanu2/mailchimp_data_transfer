@@ -12,9 +12,6 @@ from copy import deepcopy
 
 from transform import datetime_parsers_with_timezone as dpwt
 
-import determine_running_folder_path as drfp
-pathFiles=drfp.main()
-
 def transform_campaign_data(campaignDetails):
     thisCampaign={}
     thisCampaign['NoEmailsSent']=campaignDetails.get('emails_sent')
@@ -45,7 +42,6 @@ def transform_campaign_data(campaignDetails):
     return thisCampaign
 
 
-
 def transform_unsubscribes(campaignUnsubscribes):
     thisCampaignUnsubscribes=[]
     
@@ -59,7 +55,6 @@ def transform_unsubscribes(campaignUnsubscribes):
         thisCampaignUnsubscribes.append(out)
     
     return thisCampaignUnsubscribes
-
 
 
 def transform_advices(campaignAdvices):

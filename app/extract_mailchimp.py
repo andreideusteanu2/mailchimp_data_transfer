@@ -7,27 +7,10 @@ Created on Wed Oct 16 13:13:15 2019
 """
 
 import requests as r
-from json import loads
-import determine_running_folder_path as drfp
 from copy import deepcopy
-from sys import path
-
 from multiprocess import Pool
 
-pathFiles=drfp.main()
-path.append(str(pathFiles/'mailchimp_data_transfer'))
 baseUrl='https://us1.api.mailchimp.com/3.0/'
-
-
-def set_auth():
-    credentialsPath=pathFiles/'credentials'
-    user='anystring'
-    with open(str(credentialsPath/'mailchimp_api_key.json'),'r') as f:
-        key=loads(f.readline())['key']
-
-    auth=(user,key)
-    
-    return auth
 
 def create_operations_array(baseUrl,method,mapper,total_items):    
     batchSize=0

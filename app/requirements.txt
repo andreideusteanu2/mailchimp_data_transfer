@@ -2,3 +2,7 @@ pandas==0.25.2
 google-cloud
 google-cloud-storage
 google-cloud-bigquery
+multiprocess==0.70.9
+pathlib
+beautifulsoup4
+requests
